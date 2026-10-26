@@ -1,0 +1,9 @@
+openai>=1.30.0
+networkx>=3.2
+click>=8.1
+pydantic>=2.5
+tqdm>=4.66
+numpy>=1.26
+pytest>=7.4
+pytest-asyncio>=0.23
+pytest-cov>=4.1

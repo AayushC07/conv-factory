@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conversation Factory — Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; overflow-x: hidden; }
+
+  h1 { text-align: center; padding: 32px 0 8px; font-size: 28px; color: #58a6ff; letter-spacing: -0.5px; }
+  .subtitle { text-align: center; color: #8b949e; font-size: 14px; margin-bottom: 32px; }
+
+  /* ---- Pipeline overview ---- */
+  .pipeline-section { max-width: 1200px; margin: 0 auto 48px; padding: 0 24px; }
+  .section-title { font-size: 20px; color: #58a6ff; margin-bottom: 16px; border-bottom: 1px solid #21262d; padding-bottom: 8px; }
+
+  .pipeline-flow {
+    display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+    gap: 0; padding: 24px 0;
+  }
+  .pipeline-stage {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 16px 20px; min-width: 140px; text-align: center;
+    transition: transform 0.2s, border-color 0.2s; cursor: default;
+  }
+  .pipeline-stage:hover { transform: translateY(-4px); border-color: #58a6ff; }
+  .pipeline-stage .icon { font-size: 28px; margin-bottom: 6px; }
+  .pipeline-stage .label { font-size: 13px; font-weight: 600; color: #e6edf3; }
+  .pipeline-stage .sub { font-size: 11px; color: #8b949e; margin-top: 4px; }
+  .arrow { font-size: 24px; color: #484f58; padding: 0 6px; user-select: none; flex-shrink: 0; }
+  .arrow-down { display: none; }
+
+  /* feedback arrow */
+  .feedback-row { display: flex; justify-content: center; margin: -8px 0 16px; }
+  .feedback-arrow {
+    color: #f0883e; font-size: 12px; padding: 6px 16px;
+    border: 1px dashed #f0883e40; border-radius: 20px; background: #161b2280;
+  }
+
+  /* ---- Layer cards ---- */
+  .layers { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; margin-bottom: 48px; }
+  .layer-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 20px; transition: border-color 0.2s;
+  }
+  .layer-card:hover { border-color: #58a6ff; }
+  .layer-card h3 { font-size: 15px; color: #58a6ff; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .layer-card h3 .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .component { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+  .component:last-child { margin-bottom: 0; }
+  .component .name { font-size: 13px; font-weight: 600; color: #e6edf3; font-family: 'SF Mono', 'Fira Code', monospace; }
+  .component .file { font-size: 11px; color: #484f58; font-family: monospace; }
+  .component .desc { font-size: 12px; color: #8b949e; margin-top: 4px; }
+
+  /* ---- Data flow diagram ---- */
+  .flow-section { max-width: 1200px; margin: 0 auto 48px; padding: 0 24px; }
+  svg { width: 100%; height: auto; }
+  .flow-container { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; overflow-x: auto; }
+
+  /* ---- Conversation loop ---- */
+  .loop-diagram { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 0; }
+  .loop-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .loop-box {
+    padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    border: 1px solid; min-width: 120px; text-align: center;
+  }
+  .loop-box.user { background: #0d2818; border-color: #238636; color: #3fb950; }
+  .loop-box.assistant { background: #0c2d6b30; border-color: #1f6feb; color: #58a6ff; }
+  .loop-box.executor { background: #3d1d00; border-color: #d29922; color: #e3b341; }
+  .loop-box.plan { background: #2d1b4e; border-color: #8957e5; color: #bc8cff; }
+  .loop-box.judge { background: #3d0e0e; border-color: #da3633; color: #f85149; }
+  .loop-box.steering { background: #3d2200; border-color: #f0883e; color: #f0883e; }
+  .loop-arrow { color: #484f58; font-size: 18px; user-select: none; }
+  .loop-label { font-size: 11px; color: #8b949e; font-style: italic; }
+
+  /* ---- Legend ---- */
+  .legend { max-width: 1200px; margin: 0 auto 48px; padding: 0 24px; }
+  .legend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #8b949e; }
+  .legend-color { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; }
+
+  /* ---- Edge type table ---- */
+  .edge-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  .edge-table th, .edge-table td { padding: 8px 12px; text-align: left; font-size: 12px; border-bottom: 1px solid #21262d; }
+  .edge-table th { color: #58a6ff; font-weight: 600; }
+  .edge-table td { color: #c9d1d9; }
+  .edge-table .weight { font-family: monospace; color: #f0883e; }
+
+  /* ---- Stats ---- */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
+  .stat-card { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 14px; text-align: center; }
+  .stat-card .val { font-size: 24px; font-weight: 700; color: #58a6ff; }
+  .stat-card .lbl { font-size: 11px; color: #8b949e; margin-top: 4px; }
+
+  @media (max-width: 700px) {
+    .pipeline-flow { flex-direction: column; }
+    .arrow { transform: rotate(90deg); }
+    .layers { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Conversation Factory</h1>
+<p class="subtitle">Multi-Agent Synthetic Tool-Use Conversation Generator &mdash; Architecture Overview</p>
+
+<!-- ============ PIPELINE OVERVIEW ============ -->
+<div class="pipeline-section">
+  <div class="section-title">End-to-End Pipeline</div>
+  <div class="pipeline-flow">
+    <div class="pipeline-stage">
+      <div class="icon">📦</div>
+      <div class="label">ToolBench Data</div>
+      <div class="sub">Raw JSON files</div>
+    </div>
+    <div class="arrow">&#x2192;</div>
+    <div class="pipeline-stage">
+      <div class="icon">📋</div>
+      <div class="label">Registry</div>
+      <div class="sub">Normalized models</div>
+    </div>
+    <div class="arrow">&#x2192;</div>
+    <div class="pipeline-stage">
+      <div class="icon">🕸️</div>
+      <div class="label">Tool Graph</div>
+      <div class="sub">NetworkX directed graph</div>
+    </div>
+    <div class="arrow">&#x2192;</div>
+    <div class="pipeline-stage">
+      <div class="icon">🎲</div>
+      <div class="label">Sampler</div>
+      <div class="sub">Constrained walks</div>
+    </div>
+    <div class="arrow">&#x2192;</div>
+    <div class="pipeline-stage">
+      <div class="icon">🤖</div>
+      <div class="label">Generator</div>
+      <div class="sub">Multi-agent orchestrator</div>
+    </div>
+    <div class="arrow">&#x2192;</div>
+    <div class="pipeline-stage">
+      <div class="icon">⚖️</div>
+      <div class="label">Evaluator</div>
+      <div class="sub">LLM-as-Judge</div>
+    </div>
+    <div class="arrow">&#x2192;</div>
+    <div class="pipeline-stage">
+      <div class="icon">💾</div>
+      <div class="label">Dataset</div>
+      <div class="sub">JSONL output</div>
+    </div>
+  </div>
+  <div class="feedback-row">
+    <div class="feedback-arrow">&#x21A9; DiversitySteering &mdash; quality scores + usage stats feed back to sampler constraints</div>
+  </div>
+</div>
+
+<!-- ============ COMPONENT LAYERS ============ -->
+<div class="pipeline-section">
+  <div class="section-title">Component Layers</div>
+</div>
+<div class="layers">
+
+  <!-- Registry -->
+  <div class="layer-card">
+    <h3><span class="dot" style="background:#3fb950"></span> Registry Layer</h3>
+    <div class="component">
+      <div class="name">ToolBenchLoader</div>
+      <div class="file">registry/loader.py</div>
+      <div class="desc">Ingests raw ToolBench JSON, normalizes inconsistencies, infers response schemas for endpoints missing them</div>
+    </div>
+    <div class="component">
+      <div class="name">ToolRegistry</div>
+      <div class="file">registry/registry.py</div>
+      <div class="desc">Central lookup: FQN &rarr; (Tool, Endpoint). Serializable to JSON.</div>
+    </div>
+    <div class="component">
+      <div class="name">Tool / Endpoint / Parameter</div>
+      <div class="file">registry/models.py</div>
+      <div class="desc">Pydantic v2 canonical data models with validation &amp; coercion</div>
+    </div>
+  </div>
+
+  <!-- Graph -->
+  <div class="layer-card">
+    <h3><span class="dot" style="background:#1f6feb"></span> Graph Layer</h3>
+    <div class="component">
+      <div class="name">ToolGraph</div>
+      <div class="file">graph/tool_graph.py</div>
+      <div class="desc">Directed graph: nodes = endpoints, edges = same_tool / same_category / data_flow / shared_params with semantic weights</div>
+    </div>
+    <div class="component">
+      <div class="name">ToolChainSampler</div>
+      <div class="file">graph/sampler.py</div>
+      <div class="desc">Weighted random walks with SamplingConstraints (min/max steps, multi-tool, categories, exclusions)</div>
+    </div>
+    <div class="component">
+      <div class="name">ToolChain</div>
+      <div class="file">graph/sampler.py</div>
+      <div class="desc">Output: ordered list of endpoint FQNs + pattern (sequential/parallel/mixed) + metadata</div>
+    </div>
+  </div>
+
+  <!-- Agents -->
+  <div class="layer-card">
+    <h3><span class="dot" style="background:#58a6ff"></span> Agents Layer</h3>
+    <div class="component">
+      <div class="name">ConversationOrchestrator</div>
+      <div class="file">agents/orchestrator.py</div>
+      <div class="desc">Coordinates scenario planning &rarr; plan IR &rarr; turn-by-turn generation with chain-bounded execution</div>
+    </div>
+    <div class="component">
+      <div class="name">AssistantAgent</div>
+      <div class="file">agents/assistant_agent.py</div>
+      <div class="desc">JSON structured output: call_tool | ask_clarification | respond. Filters calls against sampled chain.</div>
+    </div>
+    <div class="component">
+      <div class="name">UserAgent</div>
+      <div class="file">agents/user_agent.py</div>
+      <div class="desc">Simulates natural user: persona-driven, answers clarifications, reacts to results</div>
+    </div>
+    <div class="component">
+      <div class="name">ConversationPlan</div>
+      <div class="file">agents/conversation_plan.py</div>
+      <div class="desc">Typed IR: maps scenario steps &rarr; endpoint FQNs, tracks execution progress</div>
+    </div>
+  </div>
+
+  <!-- Execution -->
+  <div class="layer-card">
+    <h3><span class="dot" style="background:#d29922"></span> Execution Layer</h3>
+    <div class="component">
+      <div class="name">MockExecutor</div>
+      <div class="file">execution/mock_executor.py</div>
+      <div class="desc">Offline tool execution: schema-derived (deterministic) or LLM-enriched responses</div>
+    </div>
+    <div class="component">
+      <div class="name">SessionState</div>
+      <div class="file">execution/session.py</div>
+      <div class="desc">Records calls, indexes response values by key-path (results.*.id), generates unique mock IDs</div>
+    </div>
+    <div class="component">
+      <div class="name">ConversationGrounding</div>
+      <div class="file">context/grounding.py</div>
+      <div class="desc">Replaces placeholder arguments with real values from session state; domain-aware ID matching</div>
+    </div>
+  </div>
+
+  <!-- Evaluation -->
+  <div class="layer-card">
+    <h3><span class="dot" style="background:#f85149"></span> Evaluation Layer</h3>
+    <div class="component">
+      <div class="name">LLMJudge</div>
+      <div class="file">evaluation/judge.py</div>
+      <div class="desc">4 dimensions: naturalness, tool_correctness, task_completion, coherence (JSON structured output)</div>
+    </div>
+    <div class="component">
+      <div class="name">ConversationRepairer</div>
+      <div class="file">evaluation/repair.py</div>
+      <div class="desc">Regenerate (mean &lt; 2.0) &rarr; targeted repair &rarr; best-effort after max attempts</div>
+    </div>
+    <div class="component">
+      <div class="name">Corpus Metrics</div>
+      <div class="file">evaluation/metrics.py</div>
+      <div class="desc">Shannon entropy, Jaccard distance, category coverage, multi-step ratio</div>
+    </div>
+  </div>
+
+  <!-- Steering -->
+  <div class="layer-card">
+    <h3><span class="dot" style="background:#f0883e"></span> Steering Layer</h3>
+    <div class="component">
+      <div class="name">DiversitySteering</div>
+      <div class="file">context/steering.py</div>
+      <div class="desc">Frequency budgets, category caps, Travel hotspot exclusions, Weather minimum floor, unused-tool nudges</div>
+    </div>
+    <div class="component">
+      <div class="name">ConversationPipeline</div>
+      <div class="file">pipeline.py</div>
+      <div class="desc">End-to-end orchestration: build &rarr; generate (async batches) &rarr; evaluate. Three cohorts: short / multi-step / remainder.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ CONVERSATION GENERATION LOOP ============ -->
+<div class="pipeline-section">
+  <div class="section-title">Conversation Generation Loop (per conversation)</div>
+  <div class="flow-container">
+    <div class="loop-diagram">
+
+      <div class="loop-row">
+        <div class="loop-box plan">Scenario Planner</div>
+        <div class="loop-arrow">&#x2192;</div>
+        <div class="loop-box plan">ConversationPlan IR</div>
+        <div class="loop-arrow">&#x2192;</div>
+        <div class="loop-box user">UserAgent.configure()</div>
+      </div>
+      <div class="loop-label">LLM generates scenario + expected steps &rarr; typed plan maps steps to endpoints</div>
+
+      <div class="loop-arrow" style="transform: rotate(90deg);">&#x2192;</div>
+
+      <div class="loop-row">
+        <div class="loop-box user">User Message</div>
+        <div class="loop-arrow">&#x2192;</div>
+        <div class="loop-box assistant">AssistantAgent.decide()</div>
+      </div>
+      <div class="loop-label">JSON structured output: { action, tool_calls, message, reasoning }</div>
+
+      <div style="display: flex; gap: 48px; flex-wrap: wrap; justify-content: center; margin-top: 8px;">
+        <!-- Branch 1: tool call -->
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <div class="loop-label">action = "call_tool"</div>
+          <div class="loop-box assistant">Validate vs chain</div>
+          <div class="loop-arrow" style="transform: rotate(90deg);">&#x2192;</div>
+          <div class="loop-box executor">Grounding.ground_arguments()</div>
+          <div class="loop-arrow" style="transform: rotate(90deg);">&#x2192;</div>
+          <div class="loop-box executor">MockExecutor.execute()</div>
+          <div class="loop-arrow" style="transform: rotate(90deg);">&#x2192;</div>
+          <div class="loop-box plan">plan.mark_executed()</div>
+          <div class="loop-arrow" style="transform: rotate(90deg);">&#x2192;</div>
+          <div class="loop-box executor">SessionState.record_call()</div>
+        </div>
+
+        <!-- Branch 2: clarification -->
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <div class="loop-label">action = "ask_clarification"</div>
+          <div class="loop-box assistant">Assistant question</div>
+          <div class="loop-arrow" style="transform: rotate(90deg);">&#x2192;</div>
+          <div class="loop-box user">UserAgent.respond()</div>
+          <div class="loop-arrow" style="transform: rotate(90deg);">&#x2192;</div>
+          <div class="loop-label">&#x21A9; back to loop</div>
+        </div>
+
+        <!-- Branch 3: respond -->
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <div class="loop-label">action = "respond"</div>
+          <div class="loop-box assistant">Final message</div>
+          <div class="loop-arrow" style="transform: rotate(90deg);">&#x2192;</div>
+          <div class="loop-label">chain exhausted? &rarr; end</div>
+          <div class="loop-label">else &rarr; UserAgent follow-up</div>
+        </div>
+      </div>
+
+      <div class="loop-arrow" style="transform: rotate(90deg); margin-top: 12px;">&#x2192;</div>
+
+      <div class="loop-row">
+        <div class="loop-box judge">LLMJudge.score()</div>
+        <div class="loop-arrow">&#x2192;</div>
+        <div class="loop-box judge">Repair if needed</div>
+        <div class="loop-arrow">&#x2192;</div>
+        <div class="loop-box steering">DiversitySteering.record()</div>
+      </div>
+      <div class="loop-label">4 dimensions scored &rarr; repair policy &rarr; stats update constraints for next conversation</div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ TOOL GRAPH EDGES ============ -->
+<div class="pipeline-section">
+  <div class="section-title">Tool Graph Edge Types</div>
+  <div class="flow-container">
+    <table class="edge-table">
+      <thead>
+        <tr><th>Edge Type</th><th>Weight</th><th>Meaning</th><th>Example</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>data_flow</strong></td>
+          <td class="weight">1.0</td>
+          <td>Output of A feeds input of B (param name + type match)</td>
+          <td>search_hotels.results.*.id &rarr; get_hotel_details.hotel_id</td>
+        </tr>
+        <tr>
+          <td><strong>same_tool</strong> (forward)</td>
+          <td class="weight">0.8</td>
+          <td>Adjacent operation rank within same tool (search &rarr; get &rarr; book)</td>
+          <td>Hotels_API/search &rarr; Hotels_API/get_details</td>
+        </tr>
+        <tr>
+          <td><strong>same_tool</strong> (skip)</td>
+          <td class="weight">0.3</td>
+          <td>Skips an operation phase within same tool</td>
+          <td>Hotels_API/search &rarr; Hotels_API/book (skipping details)</td>
+        </tr>
+        <tr>
+          <td><strong>same_tool</strong> (backward)</td>
+          <td class="weight">0.05</td>
+          <td>Reverse direction — weak, for connectivity</td>
+          <td>Hotels_API/book &rarr; Hotels_API/search</td>
+        </tr>
+        <tr>
+          <td><strong>same_category</strong></td>
+          <td class="weight">0.1–0.4</td>
+          <td>Cross-tool, same domain; prefers landing on discovery endpoints</td>
+          <td>Hotels_API/search &rarr; Flights_API/search</td>
+        </tr>
+        <tr>
+          <td><strong>shared_params</strong></td>
+          <td class="weight">&le;0.3</td>
+          <td>Cross-tool endpoints sharing meaningful inputs (city, date, ...)</td>
+          <td>Weather_API/forecast(city) &rarr; Events_API/search(city)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============ COHORT SPLIT ============ -->
+<div class="pipeline-section">
+  <div class="section-title">Corpus Cohort Strategy</div>
+  <div class="flow-container">
+    <div style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; padding: 12px 0;">
+      <div style="flex: 1; min-width: 200px; background: #0d2818; border: 1px solid #238636; border-radius: 10px; padding: 16px; text-align: center;">
+        <div style="font-size: 32px; font-weight: 700; color: #3fb950;">15%</div>
+        <div style="font-size: 14px; color: #3fb950; font-weight: 600;">Short Cohort</div>
+        <div style="font-size: 12px; color: #8b949e; margin-top: 8px;">1–2 steps, single-tool<br>Quick single-turn tasks</div>
+      </div>
+      <div style="flex: 2; min-width: 200px; background: #0c2d6b30; border: 1px solid #1f6feb; border-radius: 10px; padding: 16px; text-align: center;">
+        <div style="font-size: 32px; font-weight: 700; color: #58a6ff;">65%</div>
+        <div style="font-size: 14px; color: #58a6ff; font-weight: 600;">Multi-Step Multi-Tool</div>
+        <div style="font-size: 12px; color: #8b949e; margin-top: 8px;">3+ steps, 2+ distinct tools<br>Complex chained workflows</div>
+      </div>
+      <div style="flex: 1; min-width: 200px; background: #2d1b4e40; border: 1px solid #8957e5; border-radius: 10px; padding: 16px; text-align: center;">
+        <div style="font-size: 32px; font-weight: 700; color: #bc8cff;">20%</div>
+        <div style="font-size: 14px; color: #bc8cff; font-weight: 600;">Remainder</div>
+        <div style="font-size: 12px; color: #8b949e; margin-top: 8px;">2+ steps, single-tool<br>Medium-length dialogues</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ QUALITY DIMENSIONS ============ -->
+<div class="pipeline-section">
+  <div class="section-title">LLM-as-Judge Quality Dimensions</div>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="val" style="color: #3fb950;">1–5</div>
+      <div class="lbl">Naturalness<br><span style="font-size:10px;">Conversational flow &amp; language</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="val" style="color: #58a6ff;">1–5</div>
+      <div class="lbl">Tool Correctness<br><span style="font-size:10px;">Valid calls, correct args &amp; types</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="val" style="color: #d29922;">1–5</div>
+      <div class="lbl">Task Completion<br><span style="font-size:10px;">User goal achieved end-to-end</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="val" style="color: #f85149;">1–5</div>
+      <div class="lbl">Coherence<br><span style="font-size:10px;">Logical chain, output references</span></div>
+    </div>
+  </div>
+  <div style="margin-top: 16px; padding: 12px 16px; background: #0d1117; border: 1px solid #21262d; border-radius: 8px;">
+    <div style="font-size: 12px; color: #8b949e;">
+      <strong style="color:#c9d1d9;">Repair policy:</strong>
+      Mean &lt; 2.0 &rarr; full regeneration &nbsp;|&nbsp;
+      Mean &lt; threshold (3.0) &rarr; targeted repair &nbsp;|&nbsp;
+      Issues + low dimension &lt; 3.5 &rarr; targeted repair &nbsp;|&nbsp;
+      Structural runaway &rarr; always repair &nbsp;|&nbsp;
+      Max 3 attempts &rarr; keep best
+    </div>
+  </div>
+</div>
+
+<!-- ============ DATA FLOW DIAGRAM ============ -->
+<div class="pipeline-section">
+  <div class="section-title">Key Data Structures Flow</div>
+  <div class="flow-container">
+    <svg viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg" style="font-family: 'Segoe UI', system-ui, sans-serif;">
+      <!-- Defs -->
+      <defs>
+        <marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#484f58"/>
+        </marker>
+        <marker id="ah-orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#f0883e"/>
+        </marker>
+      </defs>
+
+      <!-- Boxes -->
+      <rect x="20" y="20" width="140" height="50" rx="8" fill="#161b22" stroke="#238636"/>
+      <text x="90" y="42" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">ToolBench JSON</text>
+      <text x="90" y="58" text-anchor="middle" fill="#8b949e" font-size="9">raw tool definitions</text>
+
+      <rect x="200" y="20" width="140" height="50" rx="8" fill="#161b22" stroke="#3fb950"/>
+      <text x="270" y="42" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">ToolRegistry</text>
+      <text x="270" y="58" text-anchor="middle" fill="#8b949e" font-size="9">Tool[] + Endpoint[]</text>
+
+      <rect x="380" y="20" width="140" height="50" rx="8" fill="#161b22" stroke="#1f6feb"/>
+      <text x="450" y="42" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">ToolGraph</text>
+      <text x="450" y="58" text-anchor="middle" fill="#8b949e" font-size="9">NetworkX DiGraph</text>
+
+      <rect x="560" y="20" width="140" height="50" rx="8" fill="#161b22" stroke="#1f6feb"/>
+      <text x="630" y="42" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">ToolChain</text>
+      <text x="630" y="58" text-anchor="middle" fill="#8b949e" font-size="9">endpoint FQNs + pattern</text>
+
+      <rect x="740" y="20" width="140" height="50" rx="8" fill="#161b22" stroke="#8957e5"/>
+      <text x="810" y="42" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="600">ConversationPlan</text>
+      <text x="810" y="58" text-anchor="middle" fill="#8b949e" font-size="9">steps + progress</text>
+
+      <!-- Row 2 -->
+      <rect x="200" y="120" width="140" height="50" rx="8" fill="#161b22" stroke="#d29922"/>
+      <text x="270" y="142" text-anchor="middle" fill="#e3b341" font-size="11" font-weight="600">SessionState</text>
+      <text x="270" y="158" text-anchor="middle" fill="#8b949e" font-size="9">call history + ID index</text>
+
+      <rect x="380" y="120" width="140" height="50" rx="8" fill="#161b22" stroke="#d29922"/>
+      <text x="450" y="142" text-anchor="middle" fill="#e3b341" font-size="11" font-weight="600">MockExecutor</text>
+      <text x="450" y="158" text-anchor="middle" fill="#8b949e" font-size="9">schema / LLM responses</text>
+
+      <rect x="560" y="120" width="140" height="50" rx="8" fill="#161b22" stroke="#58a6ff"/>
+      <text x="630" y="142" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">Orchestrator</text>
+      <text x="630" y="158" text-anchor="middle" fill="#8b949e" font-size="9">turn-by-turn loop</text>
+
+      <!-- Row 3 -->
+      <rect x="380" y="220" width="140" height="50" rx="8" fill="#161b22" stroke="#da3633"/>
+      <text x="450" y="242" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">LLMJudge</text>
+      <text x="450" y="258" text-anchor="middle" fill="#8b949e" font-size="9">4-dim scores + issues</text>
+
+      <rect x="560" y="220" width="140" height="50" rx="8" fill="#161b22" stroke="#da3633"/>
+      <text x="630" y="242" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">Repairer</text>
+      <text x="630" y="258" text-anchor="middle" fill="#8b949e" font-size="9">regenerate / fix</text>
+
+      <rect x="200" y="220" width="140" height="50" rx="8" fill="#161b22" stroke="#f0883e"/>
+      <text x="270" y="242" text-anchor="middle" fill="#f0883e" font-size="11" font-weight="600">DiversitySteering</text>
+      <text x="270" y="258" text-anchor="middle" fill="#8b949e" font-size="9">frequency budgets</text>
+
+      <rect x="560" y="300" width="280" height="30" rx="6" fill="#161b22" stroke="#484f58"/>
+      <text x="700" y="320" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="600">dataset.jsonl + metrics.json</text>
+
+      <!-- Arrows Row 1 -->
+      <line x1="160" y1="45" x2="198" y2="45" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+      <line x1="340" y1="45" x2="378" y2="45" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+      <line x1="520" y1="45" x2="558" y2="45" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+      <line x1="700" y1="45" x2="738" y2="45" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+
+      <!-- Down arrows -->
+      <line x1="630" y1="70" x2="630" y2="118" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+      <line x1="810" y1="70" x2="810" y2="120" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+      <path d="M810,120 L810,145 L700,145" fill="none" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+
+      <!-- Executor <-> Session -->
+      <line x1="380" y1="145" x2="342" y2="145" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+      <line x1="520" y1="145" x2="558" y2="145" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+
+      <!-- Down to judge -->
+      <line x1="630" y1="170" x2="630" y2="218" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+      <line x1="630" y1="195" x2="450" y2="195" stroke="#484f58" stroke-width="1" stroke-dasharray="4"/>
+      <line x1="450" y1="195" x2="450" y2="218" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+
+      <!-- Judge -> Repairer -->
+      <line x1="520" y1="245" x2="558" y2="245" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+
+      <!-- Judge -> Steering (feedback) -->
+      <line x1="380" y1="245" x2="342" y2="245" stroke="#f0883e" stroke-width="1.5" marker-end="url(#ah-orange)" stroke-dasharray="6 3"/>
+
+      <!-- Steering -> Sampler (feedback up) -->
+      <path d="M270,220 L270,90 L450,90 L450,72" fill="none" stroke="#f0883e" stroke-width="1.5" marker-end="url(#ah-orange)" stroke-dasharray="6 3"/>
+
+      <!-- Output -->
+      <line x1="630" y1="270" x2="630" y2="298" stroke="#484f58" stroke-width="1.5" marker-end="url(#ah)"/>
+
+    </svg>
+  </div>
+</div>
+
+<!-- ============ LEGEND ============ -->
+<div class="legend">
+  <div class="section-title">Color Legend</div>
+  <div class="legend-grid">
+    <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div> Registry layer — data ingestion &amp; normalization</div>
+    <div class="legend-item"><div class="legend-color" style="background:#1f6feb"></div> Graph layer — structure &amp; sampling</div>
+    <div class="legend-item"><div class="legend-color" style="background:#58a6ff"></div> Agents layer — conversation generation</div>
+    <div class="legend-item"><div class="legend-color" style="background:#8957e5"></div> Plan IR — scenario &rarr; execution bridge</div>
+    <div class="legend-item"><div class="legend-color" style="background:#d29922"></div> Execution layer — mock tools &amp; state</div>
+    <div class="legend-item"><div class="legend-color" style="background:#f85149"></div> Evaluation layer — quality scoring &amp; repair</div>
+    <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div> Steering — cross-conversation diversity feedback</div>
+    <div class="legend-item"><div class="legend-color" style="background:#484f58"></div> Data flow arrows (dashed = feedback loop)</div>
+  </div>
+</div>
+
+<div style="text-align: center; padding: 24px; color: #484f58; font-size: 12px;">
+  Generated from codebase analysis &mdash; Conversation Factory architecture
+</div>
+
+</body>
+</html>
